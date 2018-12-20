@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # Author: Oros
 # Contributors : puyoulu, 1kali2kali, petterreinholdtsen
-# 2017/09/07
+# 2018/08/18
 # License : CC0 1.0 Universal
 
 """
@@ -10,54 +10,6 @@ This program shows you IMSI numbers of cellphones around you.
 
 
 /!\ This program was made to understand how GSM network work. Not for bad hacking !
-
-
-What you need :
-1 PC
-1 USB DVB-T key (RTL2832U) with antenna (less than 15$) or a OsmocomBB phone or HackRf
-
-
-Setup :
-
-sudo apt install python-numpy python-scipy python-scapy
-
-sudo add-apt-repository -y ppa:ptrkrysik/gr-gsm
-sudo apt update
-sudo apt install gr-gsm
-
-If gr-gsm failled to setup. Try this setup : https://github.com/ptrkrysik/gr-gsm/wiki/Installation
-
-Run :
-
-# Open 2 terminals.
-# In terminal 1
-sudo python simple_IMSI-catcher.py
-
-# In terminal 2
-airprobe_rtlsdr.py
-# Now, change the frequency and stop it when you have output like :
-# 15 06 21 00 01 f0 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b
-# 25 06 21 00 05 f4 f8 68 03 26 23 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b 2b
-# 49 06 1b 95 cc 02 f8 02 01 9c c8 03 1e 57 a5 01 79 00 00 1c 13 2b 2b
-# ...
-#
-# Now, watch terminal 1 and wait. IMSI numbers should appear :-)
-# If nothing appears after 1 min, change the frequency.
-#
-# Doc : https://fr.wikipedia.org/wiki/Global_System_for_Mobile_Communications
-# Example of frequency : 9.288e+08 Bouygues
-
-# You can watch GSM packet with
-sudo wireshark -k -Y '!icmp && gsmtap' -i lo
-
-
-Links :
-
-Setup of Gr-Gsm : http://blog.nikseetharaman.com/gsm-network-characterization-using-software-defined-radio/
-Frequency : https://fr.wikipedia.org/wiki/Global_System_for_Mobile_Communications
-Scapy : http://secdev.org/projects/scapy/doc/usage.html
-IMSI : https://fr.wikipedia.org/wiki/IMSI
-Realtek RTL2832U : http://doc.ubuntu-fr.org/rtl2832u and http://doc.ubuntu-fr.org/rtl-sdr
 """
 
 import ctypes
@@ -353,7 +305,12 @@ def find_cell(gsm, udpdata, t = None):
 	global operator
 
 	"""
-			0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+	Dump of a packet from wireshark
+
+	/!\ there are an offset of 0x2a
+	0x12 (from the code) + 0x2a (offset) == 0x3c (in documentation's dump)
+
+	        0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
 	0000   00 00 00 00 00 00 00 00 00 00 00 00 08 00 45 00
 	0010   00 43 9a 6b 40 00 40 11 a2 3c 7f 00 00 01 7f 00
 	0020   00 01 ed d1 12 79 00 2f fe 42 02 04 01 00 00 00
@@ -364,26 +321,34 @@ def find_cell(gsm, udpdata, t = None):
 	Channel Type: BCCH (1)
 	                          6
 	0030                     01
+	
+	0x36 - 0x2a = position p[0x0c]
+
 
 	Message Type: System Information Type 3
-		                                        c
+	                                            c
 	0030                                       1b
 
+	0x3c - 0x2a = position p[0x12]
+
 	Cell CI: 0x619d (24989)
-		                                           d  e
+	                                               d  e
 	0030                                          61 9d
+
+	0x3d - 0x2a = position p[0x13]
+	0x3e - 0x2a = position p[0x14]
 
 	Location Area Identification (LAI) - 208/20/412
 	Mobile Country Code (MCC): France (208)	0x02f8
 	Mobile Network Code (MNC): Bouygues Telecom (20) 0xf802
 	Location Area Code (LAC): 0x019c (412)
-			0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
+	        0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f
 	0030                                                02 
 	0040   f8 02 01 9c
 	"""
 	if gsm.sub_type == 0x01: # Channel Type == BCCH (0)
 		p=udpdata
-		if ord(p[0x12]) == 0x1b: # Message Type: System Information Type 3
+		if ord(p[0x12]) == 0x1b: # (0x12 + 0x2a = 0x3c) Message Type: System Information Type 3
 			# FIXME
 			m=hex(ord(p[0x15]))
 			if len(m)<4:

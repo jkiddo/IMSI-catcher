@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 # Author: Petter Reinholdtsen
+# Contributor : Oros
 # Lisence: GPL v2 or later at your own choice
 
 """
@@ -18,11 +19,17 @@ import imp
 from optparse import OptionParser
 import subprocess
 import sys
+import distutils.spawn
 
 def find_gsm_bases():
-	scanner = imp.load_source('scanner', '/usr/bin/grgsm_scanner')
+	grgsm_scanner_path = distutils.spawn.find_executable("grgsm_scanner")
+	if grgsm_scanner_path is None:
+		print("Error : Please install gr-gsm")
+		exit(1)
+        
+	scanner = imp.load_source('scanner', grgsm_scanner_path)
 	sys.modules['scanner'] = scanner
-	(options, args) = scanner.argument_parser().parse_args()
+	(options, args) = scanner.argument_parser().parse_args() #FIXME conflic with argument_parser line 93
 	list = scanner.do_scan(options.samp_rate, options.band, options.speed,
 		options.ppm, options.gain, options.args)
 	return list
@@ -44,23 +51,16 @@ def select_freqs(serverlist, count = 1):
 	for s in serverlist:
 		listcopy.append(s)
 
-		freqs = []
-		operatorscount = {}
-	# First, initialize operatorscount[] to zero for all operators
-	for s in listcopy:
-		if not (s.mcc, s.mnc) in operatorscount:
-			operatorscount[(s.mcc, s.mnc)] = 0
-	# Next, pick the number of unique frequences we want, one a the
-	# time, while trying to get as many operators as we cal.
-	while 0 < count:
-		sorted_list = sorted(listcopy, key=lambda s:
-			(operatorscount[(s.mcc,s.mnc)], s.mcc,
-			s.mnc, -s.power))
-		s = sorted_list[0]
-		freqs.append(s.freq)
-		operatorscount[(s.mcc, s.mnc)] = operatorscount[(s.mcc, s.mnc)] + 1
+	freqs = []
+	sorted_list = sorted(listcopy, key=lambda s:(-s.power, s.mcc, s.mnc))
+
+	for s in sorted_list:
+		if count > 0:
+			freqs.append(s.freq)
+		else:
+			break
 		count = count - 1
-		listcopy.remove(s)
+
 	return freqs
 
 def argument_parser():
@@ -77,25 +77,26 @@ def main(options = None):
 	print("Locating potential GSM base station frequencies (this can take a few minutes).")
 	list = find_gsm_bases()
 	print("Found %d frequences" % len(list))
-	numreceivers = options.numrecv
-	freqs = select_freqs(list, numreceivers)
+	if len(list) > 0:
+		numreceivers = options.numrecv
+		freqs = select_freqs(list, numreceivers)
 
-	print("Listening on the frequencies for %d potential GSM base stations." % numreceivers)
+		print("Listening on the frequencies for %d potential GSM base stations." % numreceivers)
 
-	# Make sure a user process can listen on port 4729 by asking
-	# livemon processes to listen on other ports.
-	serverport = 4730
-	procs = []
-	for freq in freqs:
-		print("Starting livemon for freqency %.0f, server on port %d" % (freq, serverport))
-		proc = subprocess.Popen(["grgsm_livemon_headless",
-			"--serverport=%d" % serverport,
-			"-f", str(freq)])
-		procs.append(proc)
-		serverport = serverport + 1
-	# Keep the processes in our process group, to make sure they all die when scan-and-livemon is killed
-	for proc in procs:
-		proc.wait()
+		# Make sure a user process can listen on port 4729 by asking
+		# livemon processes to listen on other ports.
+		serverport = 4730
+		procs = []
+		for freq in freqs:
+			print("Starting livemon for freqency %.0f, server on port %d" % (freq, serverport))
+			proc = subprocess.Popen(["grgsm_livemon_headless",
+				"--serverport=%d" % serverport,
+				"-f", str(freq)])
+			procs.append(proc)
+			serverport = serverport + 1
+		# Keep the processes in our process group, to make sure they all die when scan-and-livemon is killed
+		for proc in procs:
+			proc.wait()
 
 if __name__ == '__main__':
 	main()
